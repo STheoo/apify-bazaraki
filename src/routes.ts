@@ -64,16 +64,8 @@ router.addHandler('detail', async ({ request, page }) => {
                 if (label === 'property area:' || label === 'property area') {
                     const li = span.closest('li');
                     if (li) {
-                        const anchor = li.querySelector('a.value-chars, a');
+                        const anchor = li.querySelector('a');
                         if (anchor) return (anchor.textContent || '').trim();
-                    }
-                    // Fallback: walk next siblings from the span until an <a> is found
-                    let el: Element | null = span.nextElementSibling;
-                    while (el) {
-                        if (el.tagName.toLowerCase() === 'a') {
-                            return (el.textContent || '').trim();
-                        }
-                        el = el.nextElementSibling;
                     }
                 }
             }
@@ -85,18 +77,14 @@ router.addHandler('detail', async ({ request, page }) => {
             const spans = Array.from(document.querySelectorAll('li span.key-chars')) as HTMLElement[];
             for (const span of spans) {
                 const label = (span.textContent || '').trim().toLowerCase();
-                if (label.includes('bedroom') || label.includes('beds')) {
+                if (label.includes('bedroom')) {
                     const li = span.closest('li');
                     if (li) {
-                        const anchor = li.querySelector('a.value-chars, a');
-                        if (anchor) return (anchor.textContent || '').trim();
-                    }
-                    let el: Element | null = span.nextElementSibling;
-                    while (el) {
-                        if (el.tagName.toLowerCase() === 'a') {
-                            return (el.textContent || '').trim();
+                        const anchor = li.querySelector('a');
+                        if (anchor) {
+                            const text = (anchor.textContent || '').trim();
+                            return /studio/i.test(text) ? '0' : text;
                         }
-                        el = el.nextElementSibling;
                     }
                 }
             }
@@ -109,18 +97,11 @@ router.addHandler('detail', async ({ request, page }) => {
             const spans = Array.from(document.querySelectorAll('li span.key-chars')) as HTMLElement[];
             for (const span of spans) {
                 const label = (span.textContent || '').trim().toLowerCase();
-                if (label.includes('floor')) {
+                if (label.includes('floor:') || label === 'floor:') {
                     const li = span.closest('li');
                     if (li) {
-                        const anchor = li.querySelector('a.value-chars, a');
+                        const anchor = li.querySelector('a');
                         if (anchor) return (anchor.textContent || '').trim();
-                    }
-                    let el: Element | null = span.nextElementSibling;
-                    while (el) {
-                        if (el.tagName.toLowerCase() === 'a') {
-                            return (el.textContent || '').trim();
-                        }
-                        el = el.nextElementSibling;
                     }
                 }
             }
@@ -133,18 +114,11 @@ router.addHandler('detail', async ({ request, page }) => {
             const spans = Array.from(document.querySelectorAll('li span.key-chars')) as HTMLElement[];
             for (const span of spans) {
                 const label = (span.textContent || '').trim().toLowerCase();
-                if (label.includes('bathroom') || label.includes('baths')) {
+                if (label.includes('bathrooms:')) {
                     const li = span.closest('li');
                     if (li) {
-                        const anchor = li.querySelector('a.value-chars, a');
+                        const anchor = li.querySelector('a');
                         if (anchor) return (anchor.textContent || '').trim();
-                    }
-                    let el: Element | null = span.nextElementSibling;
-                    while (el) {
-                        if (el.tagName.toLowerCase() === 'a') {
-                            return (el.textContent || '').trim();
-                        }
-                        el = el.nextElementSibling;
                     }
                 }
             }
@@ -160,15 +134,8 @@ router.addHandler('detail', async ({ request, page }) => {
                 if (label === 'type:' || label === 'type') {
                     const li = span.closest('li');
                     if (li) {
-                        const value = li.querySelector('a.value-chars, a, .value-chars');
+                        const value = li.querySelector('a');
                         if (value) return (value.textContent || '').trim();
-                    }
-                    let el: Element | null = span.nextElementSibling;
-                    while (el) {
-                        if (el.tagName.toLowerCase() === 'a' || el.classList.contains('value-chars')) {
-                            return (el.textContent || '').trim();
-                        }
-                        el = el.nextElementSibling;
                     }
                 }
             }
