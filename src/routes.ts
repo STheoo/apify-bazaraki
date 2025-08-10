@@ -36,7 +36,6 @@ async function extractListingRecordsFromPage(page: any, request: { loadedUrl: st
             );
         } catch {}
         const bedrooms = /^studio$/i.test(bedroomsRaw) ? '0' : bedroomsRaw;
-        console.log(bedrooms);
 
         let areaSqm = '';
         try {
@@ -45,7 +44,6 @@ async function extractListingRecordsFromPage(page: any, request: { loadedUrl: st
                 (el) => (el.textContent || '').trim(),
             );
         } catch {}
-        console.log(areaSqm);
 
         let bathrooms = '';
         try {
@@ -54,7 +52,6 @@ async function extractListingRecordsFromPage(page: any, request: { loadedUrl: st
                 (el) => (el.textContent || '').trim(),
             );
         } catch {}
-        console.log(bathrooms);
 
         let placeText = '';
         try {
@@ -73,7 +70,7 @@ async function extractListingRecordsFromPage(page: any, request: { loadedUrl: st
             source: 'bazaraki',
             url: listingUrl || `${request.loadedUrl}#pos=${index}`,
             title,
-            priceText: priceTextRaw ?? '',
+            price: priceTextRaw ?? '',
             address,
             city,
             areaSqm,

@@ -5,7 +5,7 @@ export interface ListingRecord {
     source: string;
     url: string;
     title: string;
-    priceText: string;
+    price: string;
     city: string;
     address: string;
     areaSqm: string | number | null;
@@ -48,7 +48,7 @@ export async function upsertListing(records: ListingRecord[]): Promise<void> {
             source: record.source,
             url: record.url,
             title: record.title,
-            price_text: record.priceText,
+            price: record.price,
             city: record.city || null,
             address: record.address || null,
             area_sqm: coerceNumber(record.areaSqm),
