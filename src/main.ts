@@ -35,7 +35,7 @@ await requestQueue.addRequests(startRequests);
 // Create a proxy configuration that will rotate proxies from Apify Proxy.
 const proxyConfiguration = await Actor.createProxyConfiguration();
 
-// Create two PuppeteerCrawlers that share the same queue and run in parallel
+// Create four PuppeteerCrawlers that share the same queue and run in parallel
 const crawlerA = new PuppeteerCrawler({
     proxyConfiguration,
     requestQueue,
@@ -66,8 +66,36 @@ const crawlerB = new PuppeteerCrawler({
     },
 });
 
-// Run both crawlers concurrently; they will consume from the same queue
-await Promise.all([crawlerA.run(), crawlerB.run()]);
+const crawlerC = new PuppeteerCrawler({
+    proxyConfiguration,
+    requestQueue,
+    requestHandler: router,
+    requestHandlerTimeoutSecs: 60,
+    maxRequestRetries: 2,
+    maxConcurrency: 3,
+    launchContext: {
+        launchOptions: {
+            args: ['--disable-gpu', '--no-sandbox'],
+        },
+    },
+});
+
+const crawlerD = new PuppeteerCrawler({
+    proxyConfiguration,
+    requestQueue,
+    requestHandler: router,
+    requestHandlerTimeoutSecs: 60,
+    maxRequestRetries: 2,
+    maxConcurrency: 3,
+    launchContext: {
+        launchOptions: {
+            args: ['--disable-gpu', '--no-sandbox'],
+        },
+    },
+});
+
+// Run all crawlers concurrently; they will consume from the same queue
+await Promise.all([crawlerA.run(), crawlerB.run(), crawlerC.run(), crawlerD.run()]);
 
 // Gracefully exit the Actor process. It's recommended to quit all Actors with an exit().
 await Actor.exit();

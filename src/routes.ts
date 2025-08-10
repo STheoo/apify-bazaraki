@@ -1,15 +1,96 @@
-import { createPuppeteerRouter, Dataset, log } from 'crawlee';
+import { createPuppeteerRouter, log } from 'crawlee';
 
 import { upsertListing } from './supabase.js';
+import type { ListingRecord } from './supabase.js';
 
 export const router = createPuppeteerRouter();
 
-// Listing index pages: enqueue all listing cards and pagination
+async function extractListingRecordsFromPage(page: any, request: { loadedUrl: string }): Promise<ListingRecord[]> {
+    const listings = await page.$$('div.advert.js-item-listing.js-advert-click');
+    const records: ListingRecord[] = [];
+
+    for (let index = 0; index < listings.length; index++) {
+        const listing = listings[index];
+        let listingUrl = '';
+        try {
+            listingUrl = await listing.$eval('a.advert__content-title', (el) => (el as HTMLAnchorElement).href);
+        } catch {}
+        let title = '';
+        try {
+            title = await listing.$eval('a.advert__content-title', (el) => (el.textContent || '').trim());
+        } catch {}
+
+        let priceTextRaw = '';
+        try {
+            priceTextRaw = await listing.$eval(
+                'a.advert__content-price > span',
+                (el) => (el.textContent || '').match(/(\d+(?:[\.,]\d+)?)/)?.[0].replace(/[,\.]/g, '') || '',
+            );
+        } catch {}
+
+        let bedroomsRaw = '';
+        try {
+            bedroomsRaw = await listing.$eval(
+                'div.advert__content-feature > div[style*="/icons/9e229c1efb8b4fe791001ce5b11cf74d.png"] + div',
+                (el) => (el.textContent || '').trim(),
+            );
+        } catch {}
+        const bedrooms = /^studio$/i.test(bedroomsRaw) ? '0' : bedroomsRaw;
+        console.log(bedrooms);
+
+        let areaSqm = '';
+        try {
+            areaSqm = await listing.$eval(
+                'div.advert__content-feature > div[style*="/icons/b7a876dc4ffe47f0a65051a42cec9600.png"] + div',
+                (el) => (el.textContent || '').trim(),
+            );
+        } catch {}
+        console.log(areaSqm);
+
+        let bathrooms = '';
+        try {
+            bathrooms = await listing.$eval(
+                'div.advert__content-feature > div[style*="/icons/4b964cf8af264cee81d0646a138d3679.png"] + div',
+                (el) => (el.textContent || '').trim(),
+            );
+        } catch {}
+        console.log(bathrooms);
+
+        let placeText = '';
+        try {
+            placeText = await listing.$eval('div.advert__content-place', (el) => (el.textContent || '').trim());
+        } catch {}
+        const city = placeText ? placeText.split(',')[0]?.trim() : '';
+        const address = placeText ? placeText.split(',')[1]?.trim() : '';
+        const type = 'Apartment';
+        const imageUrls = await listing.$$eval(
+            'div.swiper-wrapper > a',
+            (anchors) =>
+                anchors.map((anchor) => anchor.getAttribute('data-background')?.trim()).filter(Boolean) as string[],
+        );
+
+        const record: ListingRecord = {
+            source: 'bazaraki',
+            url: listingUrl || `${request.loadedUrl}#pos=${index}`,
+            title,
+            priceText: priceTextRaw ?? '',
+            address,
+            city,
+            areaSqm,
+            bedrooms,
+            imageUrls,
+            bathrooms,
+            type,
+            scrapedAt: new Date().toISOString(),
+        };
+        records.push(record);
+    }
+
+    return records;
+}
+
 router.addDefaultHandler(async ({ request, page, enqueueLinks }) => {
     log.info('Processing list page', { url: request.loadedUrl });
-
-    // Enqueue detail links from listing cards
-    await enqueueLinks({ selector: 'a.mask[href^="/adv/"]', label: 'detail' });
 
     // Enqueue the "Next" page if present. Prefer rel="next" to avoid brittle text matching
     let nextUrl: string | null = null;
@@ -17,152 +98,30 @@ router.addDefaultHandler(async ({ request, page, enqueueLinks }) => {
         nextUrl = await page.$eval('a.number-list-next', (a) => (a as HTMLAnchorElement).href);
     } catch {}
     if (nextUrl) await enqueueLinks({ urls: [nextUrl], label: 'list' });
+
+    const records = await extractListingRecordsFromPage(page, request);
+    try {
+        await upsertListing(records);
+    } catch (error) {
+        log.error('Error upserting listing', { error });
+    }
 });
 
 router.addHandler('list', async ({ request, page, enqueueLinks }) => {
     log.info('Processing paginated list page', { url: request.loadedUrl });
-    await enqueueLinks({ selector: 'a.mask[href^="/adv/"]', label: 'detail' });
 
     let nextUrl: string | null = null;
     try {
         nextUrl = await page.$eval('a.number-list-next', (a) => (a as HTMLAnchorElement).href);
     } catch {}
     if (nextUrl) await enqueueLinks({ urls: [nextUrl], label: 'list' });
-});
 
-router.addHandler('detail', async ({ request, page }) => {
-    const url = request.loadedUrl;
-
-    // Extract as much as possible using selectors resilient to layout changes
-    const title = await page.$eval('h1[itemprop="name"], h1', (el) => el.textContent?.trim() ?? '');
-    // Extract price text and convert to the first number after €
-    let priceText = await page
-        .$eval(
-            '.announcement-price div div, [itemprop="price"], .announcement__price__cost, .announcement__price',
-            (el) => (el.textContent || '').replace(/\s+/g, ' ').trim(),
-        )
-        .catch(() => '');
-    priceText = (priceText.match(/€\s*([0-9][0-9\s.,]*)/)?.[1] || '').replace(/[^\d]/g, '');
-
-    const description = await page.$eval('.js-description', (el) => (el.textContent || '').trim()).catch(() => '');
-
-    const imageUrls = await page
-        .$$eval('img[src*="/photos/"], .swiper img, .announcement__gallery img, .js-gallery img', (imgs) =>
-            Array.from(new Set(imgs.map((img) => (img as HTMLImageElement).src))).slice(0, 50),
-        )
-        .catch(() => [] as string[]);
-
-    // Some common derived fields
-    const cityRaw = await page.$eval('span[itemprop="address"]', (el) => (el.textContent || '').trim()).catch(() => '');
-    const city = cityRaw.split(',')[0]?.trim() || '';
-    const areaSqm = await page
-        .evaluate(() => {
-            // Find <li> that contains <span class="key-chars">Property area:</span>
-            const spans = Array.from(document.querySelectorAll('li span.key-chars')) as HTMLElement[];
-            for (const span of spans) {
-                const label = (span.textContent || '').trim().toLowerCase();
-                if (label === 'property area:' || label === 'property area') {
-                    const li = span.closest('li');
-                    if (li) {
-                        const anchor = li.querySelector('a');
-                        if (anchor) return (anchor.textContent || '').trim();
-                    }
-                }
-            }
-            return '';
-        })
-        .catch(() => '');
-    const bedrooms = await page
-        .evaluate(() => {
-            const spans = Array.from(document.querySelectorAll('li span.key-chars')) as HTMLElement[];
-            for (const span of spans) {
-                const label = (span.textContent || '').trim().toLowerCase();
-                if (label.includes('bedroom')) {
-                    const li = span.closest('li');
-                    if (li) {
-                        const anchor = li.querySelector('a');
-                        if (anchor) {
-                            const text = (anchor.textContent || '').trim();
-                            return /studio/i.test(text) ? '0' : text;
-                        }
-                    }
-                }
-            }
-            return '';
-        })
-        .catch(() => '');
-
-    const floor = await page
-        .evaluate(() => {
-            const spans = Array.from(document.querySelectorAll('li span.key-chars')) as HTMLElement[];
-            for (const span of spans) {
-                const label = (span.textContent || '').trim().toLowerCase();
-                if (label.includes('floor:') || label === 'floor:') {
-                    const li = span.closest('li');
-                    if (li) {
-                        const anchor = li.querySelector('a');
-                        if (anchor) return (anchor.textContent || '').trim();
-                    }
-                }
-            }
-            return '';
-        })
-        .catch(() => '');
-
-    const bathrooms = await page
-        .evaluate(() => {
-            const spans = Array.from(document.querySelectorAll('li span.key-chars')) as HTMLElement[];
-            for (const span of spans) {
-                const label = (span.textContent || '').trim().toLowerCase();
-                if (label.includes('bathrooms:')) {
-                    const li = span.closest('li');
-                    if (li) {
-                        const anchor = li.querySelector('a');
-                        if (anchor) return (anchor.textContent || '').trim();
-                    }
-                }
-            }
-            return '';
-        })
-        .catch(() => '');
-
-    const apartmentType = await page
-        .evaluate(() => {
-            const spans = Array.from(document.querySelectorAll('li span.key-chars')) as HTMLElement[];
-            for (const span of spans) {
-                const label = (span.textContent || '').trim().toLowerCase();
-                if (label === 'type:' || label === 'type') {
-                    const li = span.closest('li');
-                    if (li) {
-                        const value = li.querySelector('a');
-                        if (value) return (value.textContent || '').trim();
-                    }
-                }
-            }
-            return '';
-        })
-        .catch(() => '');
-
-    const record = {
-        source: 'bazaraki',
-        url,
-        title,
-        priceText,
-        description,
-        city,
-        areaSqm,
-        bedrooms,
-        floor,
-        imageUrls,
-        bathrooms,
-        apartmentType,
-        scrapedAt: new Date().toISOString(),
-    };
-
-    // Persist to Supabase (best-effort)
-    try {
-        await upsertListing(record);
-    } catch (e) {
-        log.warning('Failed to upsert into Supabase', { error: (e as Error).message, url });
+    const records = await extractListingRecordsFromPage(page, request);
+    if (records.length > 0) {
+        try {
+            await upsertListing(records);
+        } catch (error) {
+            log.error('Error upserting listing', { error });
+        }
     }
 });

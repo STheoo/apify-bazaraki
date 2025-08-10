@@ -6,13 +6,12 @@ export interface ListingRecord {
     url: string;
     title: string;
     priceText: string;
-    description: string;
     city: string;
+    address: string;
     areaSqm: string | number | null;
     bedrooms: string | number | null;
-    floor: string | number | null;
     bathrooms: string | number | null;
-    apartmentType: string | null;
+    type: string | null;
     imageUrls: string[];
     scrapedAt: string;
 }
@@ -38,29 +37,35 @@ function getSupabaseClient(): SupabaseClient {
 
 const TABLE_NAME = process.env.SUPABASE_TABLE ?? 'bazaraki_rent_apartments';
 
-export async function upsertListing(record: ListingRecord): Promise<void> {
+export async function upsertListing(records: ListingRecord[]): Promise<void> {
     const client = getSupabaseClient();
 
     // Normalize a deterministic id from URL
-    const id = Buffer.from(record.url).toString('base64');
-    const row = {
-        id,
-        source: record.source,
-        url: record.url,
-        title: record.title,
-        price_text: record.priceText,
-        description: record.description,
-        city: record.city || null,
-        area_sqm: coerceNumber(record.areaSqm),
-        bedrooms: coerceNumber(record.bedrooms),
-        floor: coerceNumber(record.floor),
-        bathrooms: coerceNumber(record.bathrooms),
-        apartment_type: record.apartmentType ?? null,
-        image_urls: record.imageUrls,
-        scraped_at: record.scrapedAt,
-    };
+    const rows = records.map((record) => {
+        const id = Buffer.from(record.url).toString('base64');
+        return {
+            id,
+            source: record.source,
+            url: record.url,
+            title: record.title,
+            price_text: record.priceText,
+            city: record.city || null,
+            address: record.address || null,
+            area_sqm: coerceNumber(record.areaSqm),
+            bedrooms: coerceNumber(record.bedrooms),
+            bathrooms: coerceNumber(record.bathrooms),
+            type: record.type ?? null,
+            image_urls: record.imageUrls,
+            scraped_at: record.scrapedAt,
+        };
+    });
 
-    const { error } = await client.from(TABLE_NAME).upsert(row, { onConflict: 'id' });
+    // De-duplicate rows by id within the same batch to avoid Postgres 21000
+    const uniqueById = new Map<string, (typeof rows)[number]>();
+    for (const row of rows) uniqueById.set(row.id, row);
+    const dedupedRows = Array.from(uniqueById.values());
+
+    const { error } = await client.from(TABLE_NAME).upsert(dedupedRows, { onConflict: 'id' });
     if (error) throw error;
 }
 
