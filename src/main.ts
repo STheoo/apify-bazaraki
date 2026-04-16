@@ -1,8 +1,9 @@
 // Apify SDK - toolkit for building Apify Actors (Read more at https://docs.apify.com/sdk/js/).
+import 'dotenv/config.js';
+
 import { Actor } from 'apify';
 // Web scraping and browser automation library (Read more at https://crawlee.dev)
 import { PuppeteerCrawler, RequestQueue } from 'crawlee';
-import 'dotenv/config';
 
 import { router } from './routes.js';
 
@@ -21,11 +22,15 @@ interface Input {
 const { startUrls = ['https://www.bazaraki.com/real-estate-to-rent/apartments-flats/'] } =
     (await Actor.getInput<Input>()) ?? {};
 
+// Open and drop the queue to ensure a clean start
+const oldQueue = await RequestQueue.open('bazaraki');
+await oldQueue.drop();
+
 // Open a shared request queue so multiple crawlers can work in parallel without duplicating work
 const requestQueue = await RequestQueue.open('bazaraki');
 
 // Normalize input: accept both string URLs and objects with extra options, but seed queue with plain strings
-const startRequests: string[] = (startUrls as any[]).map((entry) =>
+const startRequests: string[] = (startUrls as { url: string }[]).map((entry) =>
     typeof entry === 'string' ? entry : (entry?.url as string),
 );
 
@@ -33,11 +38,10 @@ const startRequests: string[] = (startUrls as any[]).map((entry) =>
 await requestQueue.addRequests(startRequests);
 
 // Create a proxy configuration that will rotate proxies from Apify Proxy.
-const proxyConfiguration = await Actor.createProxyConfiguration();
+// const proxyConfiguration = await Actor.createProxyConfiguration();
 
 // Create four PuppeteerCrawlers that share the same queue and run in parallel
 const crawlerA = new PuppeteerCrawler({
-    proxyConfiguration,
     requestQueue,
     requestHandler: router,
     // Give pages a bit more time and memory; Bazaraki pages can be media-heavy
@@ -53,7 +57,6 @@ const crawlerA = new PuppeteerCrawler({
 });
 
 const crawlerB = new PuppeteerCrawler({
-    proxyConfiguration,
     requestQueue,
     requestHandler: router,
     requestHandlerTimeoutSecs: 60,
@@ -67,7 +70,6 @@ const crawlerB = new PuppeteerCrawler({
 });
 
 const crawlerC = new PuppeteerCrawler({
-    proxyConfiguration,
     requestQueue,
     requestHandler: router,
     requestHandlerTimeoutSecs: 60,
@@ -81,7 +83,6 @@ const crawlerC = new PuppeteerCrawler({
 });
 
 const crawlerD = new PuppeteerCrawler({
-    proxyConfiguration,
     requestQueue,
     requestHandler: router,
     requestHandlerTimeoutSecs: 60,

@@ -1,5 +1,7 @@
-import { createClient, SupabaseClient } from '@supabase/supabase-js';
-import 'dotenv/config';
+import 'dotenv/config.js';
+
+import type { SupabaseClient } from '@supabase/supabase-js';
+import { createClient } from '@supabase/supabase-js';
 
 export interface ListingRecord {
     source: string;
@@ -38,12 +40,16 @@ function getSupabaseClient(): SupabaseClient {
 const TABLE_NAME = process.env.SUPABASE_TABLE ?? 'bazaraki_rent_apartments';
 
 export async function upsertListing(records: ListingRecord[]): Promise<void> {
+    if (records.length === 0) return;
+
     const client = getSupabaseClient();
 
-    // Normalize a deterministic id from URL
-    const rows = records.map((record) => {
+    // Map records to rows, using a Map to deduplicate by ID (URL-based)
+    const rowsMap = new Map();
+
+    for (const record of records) {
         const id = Buffer.from(record.url).toString('base64');
-        return {
+        rowsMap.set(id, {
             id,
             source: record.source,
             url: record.url,
@@ -57,16 +63,20 @@ export async function upsertListing(records: ListingRecord[]): Promise<void> {
             type: record.type ?? null,
             image_urls: record.imageUrls,
             scraped_at: record.scrapedAt,
-        };
-    });
+        });
+    }
 
-    // De-duplicate rows by id within the same batch to avoid Postgres 21000
-    const uniqueById = new Map<string, (typeof rows)[number]>();
-    for (const row of rows) uniqueById.set(row.id, row);
-    const dedupedRows = Array.from(uniqueById.values());
+    const rows = Array.from(rowsMap.values());
+    console.log(`Upserting ${rows.length} listings to Supabase...`);
 
-    const { error } = await client.from(TABLE_NAME).upsert(dedupedRows, { onConflict: 'id' });
-    if (error) throw error;
+    const { error } = await client.from(TABLE_NAME).upsert(rows, { onConflict: 'url' });
+
+    if (error) {
+        console.error('Error upserting listings:', error);
+        throw error;
+    }
+
+    console.log(`Successfully upserted ${rows.length} listings.`);
 }
 
 function coerceNumber(value: unknown): number | null {

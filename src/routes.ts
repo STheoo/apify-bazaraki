@@ -1,11 +1,12 @@
 import { createPuppeteerRouter, log } from 'crawlee';
+import type { Page } from 'puppeteer';
 
-import { upsertListing } from './supabase.js';
-import type { ListingRecord } from './supabase.js';
+import { type ListingRecord, upsertListing } from './supabase.js';
+
 
 export const router = createPuppeteerRouter();
 
-async function extractListingRecordsFromPage(page: any, request: { loadedUrl: string }): Promise<ListingRecord[]> {
+async function extractListingRecordsFromPage(page: Page, request: { loadedUrl: string }): Promise<ListingRecord[]> {
     const listings = await page.$$('div.advert.js-item-listing.js-advert-click');
     const records: ListingRecord[] = [];
 
@@ -14,19 +15,25 @@ async function extractListingRecordsFromPage(page: any, request: { loadedUrl: st
         let listingUrl = '';
         try {
             listingUrl = await listing.$eval('a.advert__content-title', (el) => (el as HTMLAnchorElement).href);
-        } catch {}
+        } catch {
+            console.error('Error extracting listing URL', { error: new Error().stack });
+        }
         let title = '';
         try {
             title = await listing.$eval('a.advert__content-title', (el) => (el.textContent || '').trim());
-        } catch {}
+        } catch {
+            console.error('Error extracting listing title', { error: new Error().stack });
+        }
 
         let priceTextRaw = '';
         try {
             priceTextRaw = await listing.$eval(
                 'a.advert__content-price > span',
-                (el) => (el.textContent || '').match(/(\d+(?:[\.,]\d+)?)/)?.[0].replace(/[,\.]/g, '') || '',
+                (el) => (el.textContent || '').match(/(\d+(?:[.,]\d+)?)/)?.[0].replace(/[,.]/g, '') || '',
             );
-        } catch {}
+        } catch {
+            console.error('Error extracting listing price', { error: new Error().stack });
+        }
 
         let bedroomsRaw = '';
         try {
@@ -34,7 +41,9 @@ async function extractListingRecordsFromPage(page: any, request: { loadedUrl: st
                 'div.advert__content-feature > div[style*="/icons/9e229c1efb8b4fe791001ce5b11cf74d.png"] + div',
                 (el) => (el.textContent || '').trim(),
             );
-        } catch {}
+        } catch {
+            console.error('Error extracting listing bedrooms', { error: new Error().stack });
+        }
         const bedrooms = /^studio$/i.test(bedroomsRaw) ? '0' : bedroomsRaw;
 
         let areaSqm = '';
@@ -43,7 +52,9 @@ async function extractListingRecordsFromPage(page: any, request: { loadedUrl: st
                 'div.advert__content-feature > div[style*="/icons/b7a876dc4ffe47f0a65051a42cec9600.png"] + div',
                 (el) => (el.textContent || '').trim(),
             );
-        } catch {}
+        } catch {
+            console.error('Error extracting listing areaSqm', { error: new Error().stack });
+        }
 
         let bathrooms = '';
         try {
@@ -51,12 +62,16 @@ async function extractListingRecordsFromPage(page: any, request: { loadedUrl: st
                 'div.advert__content-feature > div[style*="/icons/4b964cf8af264cee81d0646a138d3679.png"] + div',
                 (el) => (el.textContent || '').trim(),
             );
-        } catch {}
+        } catch {
+            console.error('Error extracting listing bathrooms', { error: new Error().stack });
+        }
 
         let placeText = '';
         try {
             placeText = await listing.$eval('div.advert__content-place', (el) => (el.textContent || '').trim());
-        } catch {}
+        } catch {
+            console.error('Error extracting listing placeText', { error: new Error().stack });
+        }
         const city = placeText ? placeText.split(',')[0]?.trim() : '';
         const address = placeText ? placeText.split(',')[1]?.trim() : '';
         const type = 'Apartment';
@@ -93,7 +108,9 @@ router.addDefaultHandler(async ({ request, page, enqueueLinks }) => {
     let nextUrl: string | null = null;
     try {
         nextUrl = await page.$eval('a.number-list-next', (a) => (a as HTMLAnchorElement).href);
-    } catch {}
+    } catch {
+        console.error('Error extracting next URL', { error: new Error().stack });
+    }
     if (nextUrl) await enqueueLinks({ urls: [nextUrl], label: 'list' });
 
     const records = await extractListingRecordsFromPage(page, request);
@@ -110,7 +127,9 @@ router.addHandler('list', async ({ request, page, enqueueLinks }) => {
     let nextUrl: string | null = null;
     try {
         nextUrl = await page.$eval('a.number-list-next', (a) => (a as HTMLAnchorElement).href);
-    } catch {}
+    } catch {
+        console.error('Error extracting next URL', { error: new Error().stack });
+    }
     if (nextUrl) await enqueueLinks({ urls: [nextUrl], label: 'list' });
 
     const records = await extractListingRecordsFromPage(page, request);
